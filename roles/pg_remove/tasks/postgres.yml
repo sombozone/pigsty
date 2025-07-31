@@ -1,0 +1,92 @@
+---
+#--------------------------------------------------------------#
+# Remove Follower                                   [pg_replica]
+#--------------------------------------------------------------#
+# remove followers first to avoid unnecessary failover
+# especially when removing entire cluster
+- name: remove postgres replica
+  tags: pg_replica
+  become: yes
+  ignore_errors: yes
+  when: pg_role != 'primary'
+  block:
+
+    - name: stop postgres replica services with timeout
+      shell: |
+        # stop services with timeout, then force kill if needed
+        timeout 30s systemctl stop patroni || systemctl kill patroni
+        timeout 15s systemctl stop postgres || systemctl kill postgres
+        systemctl disable patroni postgres
+        systemctl daemon-reload
+        
+        # force shutdown postgres processes
+        if ps -u {{ pg_dbsu }} -o pid:1,command | grep -E 'postmaster|postgres:|-D' ; then
+            {{ pg_bin_dir }}/pg_ctl -D {{ pg_data }} stop -m immediate || /bin/true
+        fi
+        
+        # final cleanup: kill any remaining postgres processes
+        sleep 2
+        if ps -u {{ pg_dbsu }} -o pid:1,command | grep -E 'postmaster|postgres:|-D' ; then
+            ps -u {{ pg_dbsu }} -o pid:1,command | grep -E 'postmaster|postgres:|-D' | awk '{print $1}' | xargs -r kill -9
+        fi
+      args: { executable: /bin/bash }
+
+#--------------------------------------------------------------#
+# Remove Leader                                     [pg_primary]
+#--------------------------------------------------------------#
+# remove primary last to avoid unnecessary failover
+# we will try gentle shutdown with a 30s timeout first
+# then shutdown remaining processes with brute force
+- name: remove postgres primary
+  tags: pg_primary
+  become: yes
+  ignore_errors: yes
+  when: pg_role == 'primary'
+  block:
+
+    - name: stop postgres primary services with timeout
+      shell: |
+        # stop services with timeout, then force kill if needed
+        timeout 30s systemctl stop patroni || systemctl kill patroni
+        timeout 15s systemctl stop postgres || systemctl kill postgres
+        systemctl disable patroni
+        systemctl disable postgres
+        systemctl daemon-reload
+        
+        # force shutdown postgres processes
+        if ps -u {{ pg_dbsu }} -o pid:1,command | grep -E 'postmaster|postgres:|-D' ; then
+            {{ pg_bin_dir }}/pg_ctl -D {{ pg_data }} stop -m immediate || /bin/true
+        fi
+        
+        # final cleanup: kill any remaining postgres processes
+        sleep 2
+        if ps -u {{ pg_dbsu }} -o pid:1,command | grep -E 'postmaster|postgres:|-D' ; then
+            ps -u {{ pg_dbsu }} -o pid:1,command | grep -E 'postmaster|postgres:|-D' | awk '{print $1}' | xargs -r kill -9
+        fi
+      args: { executable: /bin/bash }
+
+#--------------------------------------------------------------#
+# Remove ETCD Meta Data                                [pg_meta]
+#--------------------------------------------------------------#
+# when cleanup primary, remove etcd metadata, too
+- name: remove postgres metadata from etcd
+  tags: pg_meta
+  ignore_errors: true
+  when: pg_role == 'primary' and pg_cluster != ''
+  delegate_to: '{{ admin_ip }}'
+  become: yes
+  shell: |
+    {% if pg_mode == 'citus' %}
+    META_DIR="{{ pg_namespace|default('/pg') }}/{{ pg_shard }}/{{ pg_group }}"
+    {% else %}
+    META_DIR="{{ pg_namespace|default('/pg') }}/{{ pg_cluster }}"
+    {% endif %}
+    export ETCDCTL_ENDPOINTS="{% for ip in groups['etcd']|sort %}{% if not loop.first %},{% endif %}https://{{ ip }}:{{ etcd_port }}{% endfor %}"
+    export ETCDCTL_CACERT=/etc/pki/ca.crt
+    export ETCDCTL_CERT=/etc/pki/infra.crt
+    export ETCDCTL_KEY=/etc/pki/infra.key
+    etcdctl del "${META_DIR}" --prefix=true
+    /bin/true
+  args: { executable: /bin/bash }
+
+...

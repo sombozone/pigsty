@@ -1,0 +1,126 @@
+---
+#==============================================================#
+# File      :   electric.yml
+# Desc      :   pigsty config for running 1-node electric app
+# Ctime     :   2025-03-29
+# Mtime     :   2025-03-29
+# Docs      :   https://doc.pgsty.com/app/odoo
+# License   :   AGPLv3 @ https://doc.pgsty.com/about/license
+# Copyright :   2018-2025  Ruohang Feng / Vonng (rh@vonng.com)
+#==============================================================#
+
+# tutorial: https://doc.pgsty.com/app/electric
+# quick start: https://electric-sql.com/docs/quickstart
+# how to use this template:
+#
+#  curl -fsSL https://repo.pigsty.io/get | bash; cd ~/pigsty
+# ./bootstrap                 # prepare local repo & ansible
+# ./configure -c app/electric # use this dify config template
+# vi pigsty.yml               # IMPORTANT: CHANGE CREDENTIALS!!
+# ./install.yml               # install pigsty & pgsql & minio
+# ./docker.yml                # install docker & docker-compose
+# ./app.yml                   # install dify with docker-compose
+
+all:
+  children:
+    # infra cluster for proxy, monitor, alert, etc..
+    infra:
+      hosts: { 10.10.10.10: { infra_seq: 1 } }
+      vars:
+
+        app: electric
+        apps:       # define all applications
+          electric: # app name, should have corresponding ~/pigsty/app/electric folder
+            conf:   # override /opt/electric/.env config file : https://electric-sql.com/docs/api/config
+              DATABASE_URL: 'postgresql://electric:DBUser.Electric@10.10.10.10:5432/electric?sslmode=require'
+              ELECTRIC_PORT: 8002
+              ELECTRIC_PROMETHEUS_PORT: 8003
+              ELECTRIC_INSECURE: true
+              #ELECTRIC_SECRET: 1U6ItbhoQb4kGUU5wXBLbxvNf
+
+    # etcd cluster for ha postgres
+    etcd: { hosts: { 10.10.10.10: { etcd_seq: 1 } }, vars: { etcd_cluster: etcd } }
+
+    # minio cluster, s3 compatible object storage
+    #minio: { hosts: { 10.10.10.10: { minio_seq: 1 } }, vars: { minio_cluster: minio } }
+
+    # postgres example cluster: pg-meta
+    pg-meta:
+      hosts: { 10.10.10.10: { pg_seq: 1, pg_role: primary } }
+      vars:
+        pg_cluster: pg-meta
+        pg_users:
+          - {name: electric ,password: DBUser.Electric ,pgbouncer: true , replication: true ,roles: [dbrole_admin] ,comment: electric main user }
+        pg_databases: [{ name: electric , owner: electric }]
+        pg_hba_rules:
+          - { user: electric , db: replication ,addr: infra ,auth: ssl ,title: 'allow electric intranet/docker ssl access' }
+
+  #==============================================================#
+  # Global Parameters
+  #==============================================================#
+  vars:
+
+    #----------------------------------#
+    # Meta Data
+    #----------------------------------#
+    version: v3.6.0                   # pigsty version string
+    admin_ip: 10.10.10.10             # admin node ip address
+    region: default                   # upstream mirror region: default|china|europe
+    node_tune: oltp                   # node tuning specs: oltp,olap,tiny,crit
+    pg_conf: oltp.yml                 # pgsql tuning specs: {oltp,olap,tiny,crit}.yml
+
+    docker_enabled: true              # enable docker on app group
+    #docker_registry_mirrors: ["https://docker.1panel.live","https://docker.1ms.run","https://docker.xuanyuan.me","https://registry-1.docker.io"]
+
+    proxy_env:                        # global proxy env when downloading packages
+      no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"
+      # http_proxy:  # set your proxy here: e.g http://user:pass@proxy.xxx.com
+      # https_proxy: # set your proxy here: e.g http://user:pass@proxy.xxx.com
+      # all_proxy:   # set your proxy here: e.g http://user:pass@proxy.xxx.com
+    infra_portal:                     # domain names and upstream servers
+      home         : { domain: h.pigsty }
+      grafana      : { domain: g.pigsty ,endpoint: "${admin_ip}:3000" , websocket: true }
+      prometheus   : { domain: p.pigsty ,endpoint: "${admin_ip}:9090" }
+      alertmanager : { domain: a.pigsty ,endpoint: "${admin_ip}:9093" }
+      blackbox     : { endpoint: "${admin_ip}:9115" }
+      loki         : { endpoint: "${admin_ip}:3100" }
+      electric:
+        domain: elec.pigsty
+        endpoint: "${admin_ip}:8002"
+        websocket: true               # apply free ssl cert with certbot: make cert
+        certbot: odoo.pigsty          # <----- replace with your own domain name!
+
+    #----------------------------------#
+    # Credential: CHANGE THESE PASSWORDS
+    #----------------------------------#
+    #grafana_admin_username: admin
+    grafana_admin_password: pigsty
+    #pg_admin_username: dbuser_dba
+    pg_admin_password: DBUser.DBA
+    #pg_monitor_username: dbuser_monitor
+    pg_monitor_password: DBUser.Monitor
+    #pg_replication_username: replicator
+    pg_replication_password: DBUser.Replicator
+    #patroni_username: postgres
+    patroni_password: Patroni.API
+    #haproxy_admin_username: admin
+    haproxy_admin_password: pigsty
+    #minio_access_key: minioadmin
+    minio_secret_key: minioadmin
+
+    #----------------------------------#
+    # Safe Guard
+    #----------------------------------#
+    # you can enable these flags after bootstrap, to prevent purging running etcd / pgsql instances
+    etcd_safeguard: false             # prevent purging running etcd instance?
+    pg_safeguard: false               # prevent purging running postgres instance? false by default
+
+    #----------------------------------#
+    # Repo, Node, Packages
+    #----------------------------------#
+    repo_remove: true                 # remove existing repo on admin node during repo bootstrap
+    node_repo_remove: true            # remove existing node repo for node managed by pigsty
+    repo_extra_packages: [ pg17-main ] #,pg17-core ,pg17-time ,pg17-gis ,pg17-rag ,pg17-fts ,pg17-olap ,pg17-feat ,pg17-lang ,pg17-type ,pg17-util ,pg17-func ,pg17-admin ,pg17-stat ,pg17-sec ,pg17-fdw ,pg17-sim ,pg17-etl]
+    pg_version: 17                    # default postgres version
+    #pg_extensions: [pg17-time ,pg17-gis ,pg17-rag ,pg17-fts ,pg17-feat ,pg17-lang ,pg17-type ,pg17-util ,pg17-func ,pg17-admin ,pg17-stat ,pg17-sec ,pg17-fdw ,pg17-sim ,pg17-etl ] #,pg17-olap]
+...

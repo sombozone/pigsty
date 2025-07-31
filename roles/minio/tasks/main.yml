@@ -1,0 +1,100 @@
+---
+#--------------------------------------------------------------#
+# Assert Minio Identity                               [minio-id]
+#--------------------------------------------------------------#
+- name: minio identity
+  tags: [ always, minio-id ]
+  block:
+
+    - name: assert minio identity
+      assert:
+        that:
+          - minio_cluster is defined and minio_cluster != ''
+          - minio_seq is defined and minio_seq|int >= 0
+        fail_msg: variable 'minio_cluster' & 'minio_seq' are required for minio playbook
+
+    - name: get minio cluster info
+      connection: local
+      set_fact:
+        minio_meta: "{{ hostvars|json_query(cluster_query) }}"
+        minio_nodename: "{{ minio_node|replace('${minio_cluster}', minio_cluster)|replace('${minio_seq}', minio_seq|string) }}"
+        minio_data_dirs: >-
+          {% set minio_multidriver =  minio_data | regex_search('{(\d+)...(\d+)}') %}{% if minio_multidriver and minio_multidriver != '' %}{% set minio_driver_min = (minio_data | regex_findall('{(\d+)...(\d+)}'))[0][0]|int %}{% set minio_driver_max = (minio_data | regex_findall('{(\d+)...(\d+)}'))[0][1]|int %}{% for i in range(minio_driver_min, minio_driver_max+1) %}{% if not loop.first %},{% endif %}{{ minio_data | regex_replace('{(\d+)...(\d+)}', i|string) }}{% endfor %}{% else %}{{ minio_data }}{% endif %}
+      vars: { cluster_query: "[@.*][0][?minio_cluster=='{{ minio_cluster }}']" }
+
+    - name: building minio params
+      connection: local
+      set_fact:
+        minio_cluster_size={{ minio_meta | json_query("[].inventory_hostname") | unique | length }}
+        minio_cluster_members={{ minio_meta | json_query("[].inventory_hostname") | unique | sort }}
+        minio_seq_min={{ minio_meta | json_query('min([].minio_seq)') | int  }}
+        minio_seq_max={{ minio_meta | json_query('max([].minio_seq)') | int  }}
+        minio_seq_range={% raw %}{{% endraw %}{{ minio_meta | json_query('min([].minio_seq)') | int  }}...{{ minio_meta | json_query('max([].minio_seq)') | int  }}{% raw %}}{% endraw %}
+        minio_member="{% for host in minio_meta %}{% if not loop.first %},{% endif %}{{ host.inventory_hostname }} {{ minio_node|replace('${minio_cluster}', host.minio_cluster)|replace('${minio_seq}', host.minio_seq|string) }}{% endfor %}"
+
+    - name: calculate or use minio volumes
+      connection: local
+      set_fact:
+        minio_volumes: "{% if minio_volumes is defined and minio_volumes != ''%}{{ minio_volumes }}{% else %}{% if minio_cluster_size|int > 1 %}https://{{ minio_node|replace('${minio_cluster}', minio_cluster)|replace('${minio_seq}',minio_seq_range) }}:{{ minio_port|default(9000) }}{% endif %}{{ minio_data }}{% endif %}"
+
+    - name: print minio identity
+      debug:
+        msg: "INIT MINIO: {{ minio_nodename }}: {{ minio_volumes }}"
+
+
+#--------------------------------------------------------------#
+# Install Minio                                  [minio_install]
+#--------------------------------------------------------------#
+# minio_os_user, minio_pkg, minio_dir
+- import_tasks: install.yml
+  tags: minio_install
+
+
+#--------------------------------------------------------------#
+# Config Minio                                    [minio_config]
+#--------------------------------------------------------------#
+# minio_conf, minio_cert, minio_dns
+- import_tasks: config.yml
+  tags: minio_config
+  vars: { minio_instance: "{{ minio_cluster }}-{{ minio_seq }}" }
+
+
+#--------------------------------------------------------------#
+# Launch Minio                                    [minio_launch]
+#--------------------------------------------------------------#
+- name: launch minio server
+  tags: minio_launch
+  block:
+    - name: launch minio server service
+      systemd: name=minio state=restarted enabled=yes daemon_reload=yes
+    - name: wait for minio server online
+      wait_for: host=127.0.0.1 port={{ minio_port }} state=started timeout=10
+
+
+#--------------------------------------------------------------#
+# Register Minio                                [minio_register]
+#--------------------------------------------------------------#
+- name: register minio as prometheus target
+  tags: [ minio_register, register_prometheus ]
+  when: prometheus_enabled|bool
+  ignore_errors: true
+  delegate_to: '{{ item }}'
+  with_items: '{{ groups["infra"] | default([]) }}'
+  copy:
+    dest: "{{ prometheus_sd_dir }}/minio/{{ minio_cluster }}-{{ minio_seq }}.yml"
+    owner: prometheus
+    content: |
+      # {{ minio_cluster }}-{{ minio_seq }} @ {{ inventory_hostname }}
+      - labels: { ip: {{ inventory_hostname }} , ins: {{ minio_cluster }}-{{ minio_seq }} , cls: {{ minio_cluster }} }
+        targets: [ {{ inventory_hostname }}:{{ minio_port }} ]
+
+
+#--------------------------------------------------------------#
+# Provision Minio                              [minio_provision]
+#--------------------------------------------------------------#
+- import_tasks: provision.yml
+  when: minio_provision|bool
+  ignore_errors: true
+  tags: minio_provision
+
+...

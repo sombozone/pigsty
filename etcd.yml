@@ -1,0 +1,58 @@
+#!/usr/bin/env ansible-playbook
+---
+#==============================================================#
+# File      :   etcd.yml
+# Desc      :   init etcd on special group etcd
+# Ctime     :   2022-11-10
+# Mtime     :   2025-07-22
+# Path      :   etcd.yml
+# Docs      :   https://doc.pgsty.com/etcd/playbook
+# License   :   AGPLv3 @ https://doc.pgsty.com/about/license
+# Copyright :   2018-2025  Ruohang Feng / Vonng (rh@vonng.com)
+#==============================================================#
+- name: ETCD INIT
+  hosts: etcd
+  gather_facts: no
+  become: yes
+  roles:
+    - { role: node_id , tags: id  }
+    - { role: etcd }
+
+#---------------------------------------------------------------
+# Usage
+#---------------------------------------------------------------
+# 1. make sure etcd is defined
+#
+# etcd:
+#   hosts:
+#     10.10.10.10: { etcd_seq: 1 }
+#     10.10.10.11: { etcd_seq: 2 }
+#     10.10.10.12: { etcd_seq: 3 }
+#   vars:
+#     etcd_cluster: etcd
+#
+# 2. Run playbook: ./etcd.yml -l etcd
+#    It will create the cluster etcd
+#
+# 3. Add Member: define it in the inventory, add with:
+#    ./etcd.yml -l 10.10.10.13 -e etcd_init=existing
+#
+#--------------------------------------------------------------#
+# Utils
+#--------------------------------------------------------------#
+# bin/etcd-add               # create or update etcd cluster
+# bin/etcd-add 10.10.10.13   # expand etcd cluster with new member
+#
+#---------------------------------------------------------------
+# Tasks
+#---------------------------------------------------------------
+# etcd_assert     : generate minio identity
+# etcd_install    : install etcd rpm packages
+# etcd_dir        : create etcd data & conf dir
+# etcd_config     : generate etcd config
+#   - etcd_conf   : generate etcd main config
+#   - etcd_cert   : generate etcd ssl cert
+# etcd_launch     : launch etcd service
+# etcd_register   : register etcd to prometheus
+#---------------------------------------------------------------
+...

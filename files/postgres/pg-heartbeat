@@ -1,0 +1,18 @@
+#!/bin/bash
+set -uo pipefail
+#==============================================================#
+# File      :   pg-heartbeat
+# Desc      :   generate heartbeat record to local
+# Ctime     :   2022-12-31
+# Mtime     :   2022-12-31
+# Path      :   /pg/bin/pg-heartbeat
+# Deps      :   psql
+# License   :   AGPLv3 @ https://doc.pgsty.com/about/license
+# Copyright :   2018-2025  Ruohang Feng / Vonng (rh@vonng.com)
+#==============================================================#
+
+SQL="SELECT *, now()::TIME AS now, date_trunc('seconds',now()-ts) AS elapse FROM monitor.beating();"
+while true; do
+  psql postgres -qwXc "${SQL}"
+  sleep 1;
+done

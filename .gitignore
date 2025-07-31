@@ -1,0 +1,47 @@
+# License   :   AGPLv3 @ https://doc.pgsty.com/about/license
+# Copyright :   2018-2025  Ruohang Feng / Vonng (rh@vonng.com)
+
+#########################################################
+# pigsty-ca and other certs
+#########################################################
+files/*.key
+files/*.crt
+files/pki/*
+
+#########################################################
+# vagrant & terraform
+#########################################################
+.vagrant/
+vagrant/Vagranfile
+vagrant/.vagrant
+
+.terraform/
+terraform/.terraform/
+terraform/*.hcl
+terraform/*.tfstate*
+terraform/.terraform*
+
+#########################################################
+# tmp files
+#########################################################
+# IDE files
+.idea/
+.code/
+.vscode/
+.claude/
+CALUDE.md
+llm.txt
+.DS_Store
+__pycache__/
+bin/__pycache__
+temp/
+
+#########################################################
+# private file
+#########################################################
+bin/release-pro
+files/license.lic
+test.yml
+dist/
+files/*.tgz
+
