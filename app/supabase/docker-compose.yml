@@ -53,7 +53,7 @@ services:
   # https://supabase.com/docs/guides/getting-started/architecture#studio-dashboard
   studio:
     container_name: supabase-studio
-    image: supabase/studio:2025.06.16-sha-c4316c3
+    image: supabase/studio:2025.07.28-sha-578b707
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://studio:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})"]
