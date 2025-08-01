@@ -320,6 +320,9 @@ services:
       SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       # TODO: Allow configuring VERIFY_JWT per function. This PR might help: https://github.com/supabase/cli/pull/786
       VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}"
+      HTTP_PROXY: http://10.38.245.13:7890
+      HTTPS_PROXY: http://10.38.245.13:7890
+      NO_PROXY: localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16
     command: [ "start", "--main-service", "/home/deno/functions/main" ]
     volumes:
       - ./volumes/functions:/home/deno/functions:Z
@@ -342,7 +345,7 @@ services:
     environment:
       LOGFLARE_NODE_HOST: 127.0.0.1
       DB_USERNAME: supabase_admin
-      DB_DATABASE: supabase
+      DB_DATABASE: ${POSTGRES_DB}
       DB_HOSTNAME: ${POSTGRES_HOST}
       DB_PORT: ${POSTGRES_PORT}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -354,7 +357,7 @@ services:
       LOGFLARE_SUPABASE_MODE: true
       LOGFLARE_MIN_CLUSTER_SIZE: 1
       # Comment variables to use Big Query backend for analytics
-      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/supabase
+      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       POSTGRES_BACKEND_SCHEMA: _analytics
       LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=false
     ports:
